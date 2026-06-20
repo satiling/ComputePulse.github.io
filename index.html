@@ -382,6 +382,22 @@
             height: 280px;
             margin-top: 12px;
         }
+        .chart-with-legend { display: flex; align-items: center; gap: 24px; }
+        .chart-legend-custom { display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; padding-left: 8px; }
+        .chart-legend-custom .legend-item { display: flex; align-items: center; gap: 10px; font-size: 0.88rem; color: var(--text-muted); cursor: pointer; transition: opacity 0.2s; }
+        .chart-legend-custom .legend-dot {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            transition: box-shadow 0.2s, opacity 0.2s;
+        }
+        .chart-legend-custom .legend-item:hover .legend-dot {
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.3);
+        }
+        .chart-legend-custom .legend-item.hidden { opacity: 0.35; }
+        .chart-legend-custom .legend-item.hidden .legend-dot { opacity: 0.3; }
 
         /* Progress bar */
         .vram-bar-container {
@@ -445,7 +461,13 @@
             padding: 14px;
             text-align: center;
         }
-        .scale-item .scale-icon { font-size: 1.8rem; margin-bottom: 6px; }
+        .scale-item .scale-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 2.2rem;
+            margin-bottom: 6px;
+        }
         .scale-item .scale-label { font-size: 0.82rem; color: var(--text-muted); }
         .scale-item .scale-val { font-size: 1rem; font-weight: 600; color: var(--primary-light); margin-top: 2px; }
 
@@ -800,8 +822,11 @@
         </div>
         <div class="card">
             <div class="card-title"><i class="purple" style="background:linear-gradient(135deg,#7c3aed,#a78bfa);"><i class="fas fa-chart-pie"></i></i> 显存占比图表</div>
-            <div class="chart-container">
-                <canvas id="vramChart"></canvas>
+            <div class="chart-with-legend">
+                <div class="chart-container" style="flex:1;min-width:0;">
+                    <canvas id="vramChart"></canvas>
+                </div>
+                <div id="chartLegend" class="chart-legend-custom"></div>
             </div>
         </div>
     </div>
@@ -819,7 +844,7 @@
     </div>
 
     <div class="footer">
-        <p>AI 算力需求计算器 &copy; 2026 &mdash; 计算结果仅供参考，实际占用可能因框架/优化方式而异</p>
+        <p>AI 算力需求计算器 &copy; 2026 &mdash; 开发者：马小泉 &mdash; 计算结果仅供参考，实际占用可能因框架/优化方式而异</p>
     </div>
 </div>
 
@@ -1143,6 +1168,16 @@ let vramChartInstance = null;
 function renderVramChart(labels, values, colors) {
     const ctx = document.getElementById('vramChart').getContext('2d');
     if (vramChartInstance) vramChartInstance.destroy();
+
+    // 渲染自定义图例（完美圆形）
+    const legendEl = document.getElementById('chartLegend');
+    legendEl.innerHTML = labels.map((label, i) => `
+        <div class="legend-item" data-index="${i}" onclick="toggleChartSlice(${i})">
+            <span class="legend-dot" style="background:${colors[i] || colors[0]}"></span>
+            <span>${label}</span>
+        </div>
+    `).join('');
+
     vramChartInstance = new Chart(ctx, {
         type: 'doughnut',
         data: {
@@ -1160,23 +1195,14 @@ function renderVramChart(labels, values, colors) {
             maintainAspectRatio: false,
             cutout: '62%',
             plugins: {
-                legend: {
-                    position: 'right',
-                    labels: {
-                        color: '#94a3b8',
-                        font: { size: 11, family: 'Inter' },
-                        padding: 14,
-                        usePointStyle: true,
-                        pointStyleWidth: 10,
-                    }
-                },
+                legend: { display: false },
                 tooltip: {
                     callbacks: {
                         label: function(ctx) {
                             const val = ctx.raw;
                             const sum = ctx.dataset.data.reduce((a,b) => a+b, 0);
                             const pct = sum ? (val / sum * 100).toFixed(1) : 0;
-                            return ` ${val.toFixed(2)} GB (${pct}%)`;
+                            return ` ${val.toFixed(2)} GiB (${pct}%)`;
                         }
                     },
                     backgroundColor: '#0f172a',
@@ -1236,43 +1262,86 @@ function fmtGB(gb) {
 
 function renderScale(totalVRAM, tflops, paramsB) {
     const grid = $('scaleGrid');
+    if (!grid) return;
 
-    // TFLOPS / PFLOPS display
+    function fmtVal(gb) {
+        if (gb >= 1024) return (gb / 1024).toFixed(2) + ' TB';
+        if (gb >= 1) return gb.toFixed(2) + ' GB';
+        return (gb * 1024).toFixed(0) + ' MB';
+    }
+
     const computeStr = tflops >= 1000
         ? (tflops / 1000).toFixed(2) + ' PFLOPS'
         : tflops.toFixed(2) + ' TFLOPS';
 
-    // H100 nodes (8x H100 per node, 80GB each)
-    const h100Cards = Math.ceil(totalVRAM / 80);
-    const h100Nodes = Math.ceil(h100Cards / 8);
-
-    // H200 nodes (8x H200 per node, 141GB each)
-    const h200Cards = Math.ceil(totalVRAM / 141);
-
-    // A800 cards (China version of A100)
-    const a800Cards = Math.ceil(totalVRAM / 80);
-
-    // H800 cards (China version of H100)
-    const h800Cards = Math.ceil(totalVRAM / 80);
-    const h800Nodes  = Math.ceil(h800Cards / 8);
+    const a100Cards    = Math.ceil(totalVRAM / 80);
+    const h100Cards    = Math.ceil(totalVRAM / 80);
+    const h100Nodes    = Math.ceil(h100Cards / 8);
+    const h20_141Cards = Math.ceil(totalVRAM / 141);
+    const h200Cards    = Math.ceil(totalVRAM / 141);
+    const ascendCards  = Math.ceil(totalVRAM / 64);
 
     const items = [
-        { icon: '💾', label: '模型存储空间', val: fmtGB(totalVRAM) },
-        { icon: '⚡', label: '推理算力需求', val: computeStr },
-        { icon: '🖥️', label: 'A100/A800 80G 需求', val: `${Math.ceil(totalVRAM / 80)} 张` },
-        { icon: '🏢', label: 'H100/H800 80G 需求', val: `${h100Cards} 张 (${h100Nodes} 节点)` },
-        { icon: '🚀', label: 'H20 141G 需求', val: `${h20_141Cards} 张` },
-        { icon: '🚀', label: 'H200 141G 需求', val: `${h200Cards} 张` },
-        { icon: '🤖', label: '昇腾 910B 需求', val: `${Math.ceil(totalVRAM / 64)} 张` },
-        { icon: '💡', label: '推理延迟估算', val: `~${Math.round(paramsB * 2 / 50)} ms/tok` },
+        {
+            icon: '<i class="fas fa-database"></i>',
+            color: '#60a5fa',
+            label: '模型存储空间',
+            val: fmtVal(totalVRAM)
+        },
+        {
+            icon: '<i class="fas fa-bolt"></i>',
+            color: '#facc15',
+            label: '推理算力需求',
+            val: computeStr
+        },
+        {
+            icon: '<i class="fas fa-microchip"></i>',
+            color: '#34d399',
+            label: 'A100/A800 80G 需求',
+            val: a100Cards + ' 张'
+        },
+        {
+            icon: '<i class="fas fa-server"></i>',
+            color: '#a78bfa',
+            label: 'H100/H800 80G 需求',
+            val: h100Cards + ' 张 (' + h100Nodes + ' 节点)'
+        },
+        {
+            icon: '<i class="fas fa-rocket"></i>',
+            color: '#fb923c',
+            label: 'H20 141G 需求',
+            val: h20_141Cards + ' 张'
+        },
+        {
+            icon: '<i class="fas fa-rocket"></i>',
+            color: '#f87171',
+            label: 'H200 141G 需求',
+            val: h200Cards + ' 张'
+        },
+        {
+            icon: '<i class="fas fa-microchip" style="color:#4ade80"></i>',
+            color: '#4ade80',
+            label: '昇腾 910B 需求',
+            val: ascendCards + ' 张'
+        },
+        {
+            icon: '<i class="fas fa-clock"></i>',
+            color: '#f472b6',
+            label: '推理延迟估算',
+            val: '~' + Math.round(paramsB * 2 / 50) + ' ms/tok'
+        },
     ];
-    grid.innerHTML = items.map(i => `
-        <div class="scale-item">
-            <div class="scale-icon">${i.icon}</div>
-            <div class="scale-label">${i.label}</div>
-            <div class="scale-val">${i.val}</div>
-        </div>
-    `).join('');
+
+    let html = '';
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        html += '<div class="scale-item">'
+              + '<div class="scale-icon" style="color:' + item.color + '">' + item.icon + '</div>'
+              + '<div class="scale-label">' + item.label + '</div>'
+              + '<div class="scale-val">' + item.val + '</div>'
+              + '</div>';
+    }
+    grid.innerHTML = html;
 }
 
 // ===================== Patch calculate =====================
@@ -1451,6 +1520,20 @@ setupChips('ctxChips', ctxSlider, 'ctxDisplay');
     el.addEventListener('input', () => { updateDisplay(); if ($('inputMode').value !== 'filesize') updateFileSizeEstimate(); calculate(); });
     el.addEventListener('change', () => { updateDisplay(); if ($('inputMode').value !== 'filesize') updateFileSizeEstimate(); calculate(); });
 });
+
+// ===================== Toggle chart slice (custom legend) =====================
+function toggleChartSlice(index) {
+    const meta = vramChartInstance.getDatasetMeta(0);
+    const hidden = meta.data[index].hidden;
+    meta.data[index].hidden = !hidden;
+    vramChartInstance.update();
+
+    // 更新自定义图例样式
+    const items = document.querySelectorAll('#chartLegend .legend-item');
+    if (items[index]) {
+        items[index].classList.toggle('hidden', !hidden);
+    }
+}
 
 updateDisplay();
 updateFileSizeEstimate();
