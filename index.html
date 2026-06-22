@@ -750,7 +750,7 @@
                     <span>GPU 数量 <span class="tip" data-tip="使用多张 GPU 进行模型并行">?</span></span>
                     <span class="val" id="gpuCountDisplay">1</span>
                 </div>
-                <input type="range" id="gpuCount" min="1" max="16" step="1" value="1">
+                <input type="range" id="gpuCount" min="1" max="64" step="1" value="1">
             </div>
         </div>
     </div>
@@ -780,7 +780,7 @@
         <div class="stat-card purple">
             <div class="stat-icon"><i class="fas fa-server"></i></div>
             <div class="stat-value" id="resGPUs">--</div>
-            <div class="stat-label">推荐 GPU 数量</div>
+            <div class="stat-label">推荐 NVIDIA H100 GPU 数量</div>
         </div>
     </div>
 
@@ -1392,7 +1392,7 @@ function calculate() {
 
     const tflopsPerToken = mode === 'training' ? 6 * params : 2 * params;
     const tflops = tflopsPerToken * 30 * batchSize / 1e12;
-    const recGPUs = Math.ceil(totalVRAM / 24);
+    const recGPUs = Math.ceil(totalVRAM / 80);
 
     $('resModelVRAM').textContent = weightVRAM.toFixed(2) + ' GiB';
     $('resKVCache').textContent   = kvVRAM.toFixed(2) + ' GiB';
